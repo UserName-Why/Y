@@ -1,79 +1,63 @@
-﻿using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
-using System.Text.RegularExpressions;
 using Microsoft.Win32;
-using System.Text.Json;
 
-namespace Windows_Optimization
+namespace Anime_Manga_Novell_Read
 {
-    public partial class MainWindow : Window
+    public partial class MainWindow
     {
-        #region Поля и свойства
-        
-        private const string APP_FOLDER_NAME = "Anime_Manga_Novell_Read";
-        private const string ANIME_FILE = "Anime.txt";
-        private const string MANGA_FILE = "Manga.txt";
-        private const string NOVEL_FILE = "Novel.txt";
-        private const string FAVORITES_FILE = "Favorites.txt";
-        private const string SETTINGS_FILE = "Settings.json";
-        private const string DEFAULT_COLOR_HEX = "#8A2BE2";
+        private const string AppFolderName = "Anime_Manga_Novell_Read";
+        private const string AnimeFile = "Anime.txt";
+        private const string MangaFile = "Manga.txt";
+        private const string NovelFile = "Novel.txt";
+        private const string FavoritesFile = "Favorites.txt";
+        private const string SettingsFile = "Settings.json";
+        private const string DefaultColorHex = "#8A2BE2";
         
         private readonly string _appFolderPath;
         private readonly Dictionary<string, string> _filePaths;
         
-        // Цвета для разных элементов
         private Color _borderColor;
         private Color _dividerColor;
         private Color _buttonHoverColor;
         
-        // Настройки
         private bool _confirmDelete = true;
-        private bool _autoRemoveOld = false;
+        private bool _autoRemoveOld;
         private double _backgroundBrightness = 0.5;
         private double _textBrightness = 0.8;
         
-        private string _currentCategory = "";
-        private List<string> _currentItems = new List<string>();
-        private HashSet<string> _favorites = new HashSet<string>();
-        private bool _isDeleteMode = false;
-        private bool _isAddMode = false;
+        private string _currentCategory = string.Empty;
+        private readonly List<string> _currentItems = [];
+        private readonly HashSet<string> _favorites = [];
+        private bool _isDeleteMode;
+        private bool _isAddMode;
         
-        // Таймер для поиска с задержкой
         private DispatcherTimer? _searchTimer;
-        
-        // Для отслеживания кликов на кнопки категорий
-        private DateTime? _lastCategoryClickTime = null;
-        private string? _lastCategoryClicked = null;
-        
-        // Для сортировки
+        private DateTime? _lastCategoryClickTime;
+        private string? _lastCategoryClicked;
         private string _currentSort = "date";
-        
-        #endregion
-        
-        #region Конструктор и инициализация
-        
+        private bool _firstLoad = true;
+
         public MainWindow()
         {
             InitializeComponent();
             
-            // Инициализация путей
             _appFolderPath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), 
-                APP_FOLDER_NAME);
+                AppFolderName);
             
             _filePaths = new Dictionary<string, string>
             {
-                { "Аниме", Path.Combine(_appFolderPath, ANIME_FILE) },
-                { "Манга", Path.Combine(_appFolderPath, MANGA_FILE) },
-                { "Новелла", Path.Combine(_appFolderPath, NOVEL_FILE) }
+                { "Аниме", Path.Combine(_appFolderPath, AnimeFile) },
+                { "Манга", Path.Combine(_appFolderPath, MangaFile) },
+                { "Новелла", Path.Combine(_appFolderPath, NovelFile) }
             };
             
             InitializeApplication();
@@ -81,61 +65,41 @@ namespace Windows_Optimization
         
         private void InitializeApplication()
         {
-            // Создаем папку при первом запуске
             if (!Directory.Exists(_appFolderPath))
-            {
                 Directory.CreateDirectory(_appFolderPath);
-            }
             
-            // Загружаем настройки
             LoadSettings();
-            
-            // Загружаем избранное
             LoadFavorites();
-            
-            // Создаем пустые файлы при первом запуске
             InitializeFiles();
-            
-            // Подключаем обработчики событий
             InitializeEventHandlers();
-            
-            // Применяем настройки
             ApplyAllSettings();
             
-            // Устанавливаем начальный текст
-            ContentTitle.Text = "Главное";
+            ContentTitle.Text = "Anime Manga Novell Read";
             ContentText.Text = "Выберите категорию слева";
             
-            // Скрываем панели по умолчанию
             SearchPanel.Visibility = Visibility.Collapsed;
-            
-            // Инициализируем значения полей настроек
+            AddMainButton.Visibility = Visibility.Collapsed;
             UpdateSettingsValues();
             
-            // Инициализируем размер окна
-            this.Width = 1000;
-            this.Height = 600;
+            Width = 1000;
+            Height = 600;
         }
         
         private void InitializeEventHandlers()
         {
-            // Подключаем обработчики слайдеров
             WindowWidthSlider.ValueChanged += WindowWidthSlider_ValueChanged;
             WindowHeightSlider.ValueChanged += WindowHeightSlider_ValueChanged;
             BackgroundBrightnessSlider.ValueChanged += BackgroundBrightnessSlider_ValueChanged;
             TextBrightnessSlider.ValueChanged += TextBrightnessSlider_ValueChanged;
-            
-            // Подключаем обработчики текстовых полей
             SearchTextBox.TextChanged += SearchTextBox_TextChanged;
             
-            // Инициализация таймера поиска
             InitializeSearchTimer();
         }
         
         private void InitializeSearchTimer()
         {
             _searchTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
-            _searchTimer.Tick += (s, e) =>
+            _searchTimer.Tick += (_, _) =>
             {
                 _searchTimer?.Stop();
                 PerformSearch();
@@ -144,32 +108,27 @@ namespace Windows_Optimization
         
         private void LoadFavorites()
         {
-            var favoritesPath = Path.Combine(_appFolderPath, FAVORITES_FILE);
-            if (File.Exists(favoritesPath))
-            {
-                _favorites = new HashSet<string>(File.ReadAllLines(favoritesPath)
-                    .Where(line => !string.IsNullOrWhiteSpace(line))
-                    .Select(line => line.Trim()));
-            }
+            var favoritesPath = Path.Combine(_appFolderPath, FavoritesFile);
+            if (!File.Exists(favoritesPath)) return;
+            
+            _favorites.UnionWith(File.ReadAllLines(favoritesPath)
+                .Where(line => !string.IsNullOrWhiteSpace(line))
+                .Select(line => line.Trim()));
         }
         
         private void SaveFavorites()
         {
-            var favoritesPath = Path.Combine(_appFolderPath, FAVORITES_FILE);
+            var favoritesPath = Path.Combine(_appFolderPath, FavoritesFile);
             File.WriteAllLines(favoritesPath, _favorites);
         }
-        
-        #endregion
-        
-        #region Работа с файлами
         
         private void InitializeFiles()
         {
             try
             {
-                EnsureFileExists(ANIME_FILE, Array.Empty<string>());
-                EnsureFileExists(MANGA_FILE, Array.Empty<string>());
-                EnsureFileExists(NOVEL_FILE, Array.Empty<string>());
+                EnsureFileExists(AnimeFile, []);
+                EnsureFileExists(MangaFile, []);
+                EnsureFileExists(NovelFile, []);
             }
             catch (Exception ex)
             {
@@ -181,33 +140,33 @@ namespace Windows_Optimization
         {
             var filePath = Path.Combine(_appFolderPath, fileName);
             if (!File.Exists(filePath))
-            {
                 File.WriteAllLines(filePath, defaultContent);
-            }
         }
         
         private void LoadItemsForCategory(string category, bool showList = false, bool isDeleteMode = false, bool isAddMode = false)
         {
-            _isDeleteMode = isDeleteMode;
-            _isAddMode = isAddMode;
-            
-            if (!_filePaths.TryGetValue(category, out string? filePath))
-                return;
-                
-            _currentCategory = category;
-            _currentItems.Clear();
-            ItemsListPanel.Children.Clear();
-            
-            // ОБНОВЛЯЕМ ШАПКУ
-            ContentTitle.Text = category;
-            
-            // Показываем/скрываем кнопки сортировки
-            SortAZButton.Visibility = showList ? Visibility.Visible : Visibility.Collapsed;
-            SortZAButton.Visibility = showList ? Visibility.Visible : Visibility.Collapsed;
-            SortDateButton.Visibility = showList ? Visibility.Visible : Visibility.Collapsed;
-            
             try
             {
+                _isDeleteMode = isDeleteMode;
+                _isAddMode = isAddMode;
+                
+                if (!_filePaths.TryGetValue(category, out var filePath))
+                {
+                    ShowNotification($"Категория '{category}' не найдена", true);
+                    return;
+                }
+                    
+                _currentCategory = category;
+                _currentItems.Clear();
+                ItemsListPanel.Children.Clear();
+                
+                ContentTitle.Text = category;
+                
+                var visibility = showList ? Visibility.Visible : Visibility.Collapsed;
+                SortAzButton.Visibility = visibility;
+                SortZaButton.Visibility = visibility;
+                SortDateButton.Visibility = visibility;
+                
                 if (File.Exists(filePath))
                 {
                     var itemsWithTimestamp = File.ReadAllLines(filePath)
@@ -216,44 +175,44 @@ namespace Windows_Optimization
                         .Select(line =>
                         {
                             var parts = line.Split('|');
-                            if (parts.Length == 2 && long.TryParse(parts[0], out long timestamp))
-                            {
-                                return new { Timestamp = timestamp, Name = parts[1] };
-                            }
-                            return new { Timestamp = DateTime.Now.Ticks, Name = line };
+                            return parts.Length == 2 && long.TryParse(parts[0], out var timestamp)
+                                ? new { Timestamp = timestamp, Name = parts[1] }
+                                : new { Timestamp = DateTime.Now.Ticks, Name = line };
                         })
                         .ToList();
                     
-                    // Сортируем
                     itemsWithTimestamp = _currentSort switch
                     {
-                        "az" => itemsWithTimestamp.OrderBy(x => x.Name).ToList(),
-                        "za" => itemsWithTimestamp.OrderByDescending(x => x.Name).ToList(),
-                        _ => itemsWithTimestamp.OrderByDescending(x => x.Timestamp).ToList()
+                        "az" => [.. itemsWithTimestamp.OrderBy(x => x.Name)],
+                        "za" => [.. itemsWithTimestamp.OrderByDescending(x => x.Name)],
+                        _ => [.. itemsWithTimestamp.OrderByDescending(x => x.Timestamp)]
                     };
                     
-                    // Избранные в начале
-                    itemsWithTimestamp = itemsWithTimestamp
+                    itemsWithTimestamp = [.. itemsWithTimestamp
                         .OrderByDescending(x => _favorites.Contains($"{category}:{x.Name}"))
                         .ThenBy(x => _currentSort == "az" ? x.Name : "")
                         .ThenByDescending(x => _currentSort == "za" ? x.Name : "")
-                        .ThenByDescending(x => _currentSort == "date" ? x.Timestamp : 0)
-                        .ToList();
+                        .ThenByDescending(x => _currentSort == "date" ? x.Timestamp : 0)];
                     
-                    _currentItems = itemsWithTimestamp.Select(x => x.Name).ToList();
+                    _currentItems.AddRange(itemsWithTimestamp.Select(x => x.Name));
                     
                     DisplayItems();
                     
-                    // Показываем список если есть элементы ИЛИ если нажали "Посмотреть", "Удалить" или "Добавить"
-                    if (_currentItems.Count > 0 || showList || isDeleteMode || isAddMode)
+                    if (showList || isDeleteMode || isAddMode)
                     {
                         ShowItemsList();
-                        
-                        // Показываем панель поиска (всегда в режимах списка)
                         SearchPanel.Visibility = Visibility.Visible;
-                        
-                        // Показываем кнопку + ТОЛЬКО в режиме добавления
                         AddMainButton.Visibility = isAddMode ? Visibility.Visible : Visibility.Collapsed;
+                    }
+                }
+                else
+                {
+                    if (showList || isDeleteMode || isAddMode)
+                    {
+                        ShowItemsList();
+                        SearchPanel.Visibility = Visibility.Visible;
+                        AddMainButton.Visibility = isAddMode ? Visibility.Visible : Visibility.Collapsed;
+                        DisplayItems();
                     }
                 }
             }
@@ -263,7 +222,7 @@ namespace Windows_Optimization
             }
         }
         
-        private void AddItemToCurrentCategory(string item)
+        private void AddItemToCurrentCategory(string? item)
         {
             item = item?.Trim();
             
@@ -280,7 +239,7 @@ namespace Windows_Optimization
             }
             
             if (string.IsNullOrEmpty(_currentCategory) || 
-                !_filePaths.TryGetValue(_currentCategory, out string? filePath))
+                !_filePaths.TryGetValue(_currentCategory, out var filePath))
             {
                 ShowNotification("Категория не выбрана", true);
                 return;
@@ -293,10 +252,9 @@ namespace Windows_Optimization
                     .Where(line => !string.IsNullOrWhiteSpace(line))
                     .ToList();
                 
-                // Проверяем, существует ли уже точно такой же элемент
                 var exactMatch = existingItems
                     .FirstOrDefault(existing => string.Equals(
-                        existing.Contains("|") ? existing.Split('|')[1] : existing, 
+                        existing.Contains('|') ? existing.Split('|')[1] : existing, 
                         item, StringComparison.OrdinalIgnoreCase));
                 
                 if (exactMatch != null)
@@ -305,22 +263,13 @@ namespace Windows_Optimization
                     return;
                 }
                 
-                // Автоматическое удаление старых похожих записей
                 if (_autoRemoveOld)
-                {
                     RemoveOldSimilarItems(item, existingItems, filePath);
-                }
                 
-                // Добавляем новый элемент с временной меткой
-                var itemWithTimestamp = $"{DateTime.Now.Ticks}|{item}";
-                File.AppendAllText(filePath, $"\n{itemWithTimestamp}");
+                File.AppendAllText(filePath, $"\n{DateTime.Now.Ticks}|{item}");
                 
-                // Обновляем список и показываем его
                 LoadItemsForCategory(_currentCategory, true, false, true);
-                
-                // Скрываем окно добавления
                 HideAddPanel();
-                
                 ShowNotification($"Добавлено: {item}");
             }
             catch (Exception ex)
@@ -331,84 +280,64 @@ namespace Windows_Optimization
         
         private void RemoveOldSimilarItems(string newItem, List<string> existingItems, string filePath)
         {
-            // Извлекаем базовое имя (например, "Наруто" из "Наруто серия 13")
             var baseName = ExtractBaseName(newItem);
+            if (string.IsNullOrEmpty(baseName)) return;
             
-            if (string.IsNullOrEmpty(baseName))
-                return;
-            
-            // Ищем похожие элементы
             var similarItems = existingItems
                 .Select(line =>
                 {
                     var parts = line.Split('|');
-                    var name = parts.Length == 2 ? parts[1] : line;
-                    return new { Line = line, Name = name, Timestamp = parts.Length == 2 ? parts[0] : "" };
+                    return new { Line = line, Name = parts.Length == 2 ? parts[1] : line, Timestamp = parts.Length == 2 ? parts[0] : "" };
                 })
                 .Where(x => IsSimilarName(x.Name, baseName))
                 .ToList();
             
-            if (similarItems.Count >= 2)
+            if (similarItems.Count < 2) return;
+            
+            var itemsToRemove = similarItems.OrderByDescending(x => x.Timestamp).Skip(1).ToList();
+            
+            foreach (var itemToRemove in itemsToRemove)
             {
-                // Оставляем только самый новый и удаляем остальные
-                var itemsToKeep = similarItems
-                    .OrderByDescending(x => x.Timestamp)
-                    .Take(1)
-                    .ToList();
-                
-                var itemsToRemove = similarItems.Except(itemsToKeep).ToList();
-                
-                foreach (var itemToRemove in itemsToRemove)
-                {
-                    existingItems.Remove(itemToRemove.Line);
-                    ShowNotification($"Автоматически удалено: {itemToRemove.Name}");
-                }
-                
-                // Сохраняем обновленный список
-                File.WriteAllLines(filePath, existingItems);
+                existingItems.Remove(itemToRemove.Line);
+                ShowNotification($"Автоматически удалено: {itemToRemove.Name}");
             }
+            
+            File.WriteAllLines(filePath, existingItems);
         }
         
-        private string ExtractBaseName(string itemName)
+        private static string ExtractBaseName(string itemName)
         {
-            // Удаляем числа и серии
-            var cleaned = Regex.Replace(itemName, @"\s*(серия|сезон|эпизод|глава|том|part|chapter|episode|season|vol\.?)\s*\d+", "", 
+            var cleaned = Regex.Replace(itemName, 
+                @"\s*(серия|сезон|эпизод|глава|том|part|chapter|episode|season|vol\.?)\s*\d+", "", 
                 RegexOptions.IgnoreCase);
             
-            // Удаляем числа в конце
             cleaned = Regex.Replace(cleaned, @"\s+\d+$", "");
-            
-            // Удаляем специальные символы
             cleaned = Regex.Replace(cleaned, @"[^\w\sа-яА-ЯёЁ]", " ");
             
             return cleaned.Trim();
         }
         
-        private bool IsSimilarName(string item1, string item2)
+        private static bool IsSimilarName(string item1, string item2)
         {
-            // Приводим к нижнему регистру
             var name1 = item1.ToLower();
             var name2 = item2.ToLower();
             
-            // Проверяем точное совпадение базовых имен
             var base1 = ExtractBaseName(name1);
             var base2 = ExtractBaseName(name2);
             
             if (string.Equals(base1, base2, StringComparison.OrdinalIgnoreCase))
                 return true;
             
-            // Проверяем частичное совпадение
             if (base1.Contains(base2) || base2.Contains(base1))
                 return true;
             
-            // Проверяем расстояние Левенштейна для похожих названий
             var distance = LevenshteinDistance(base1, base2);
             var maxLength = Math.Max(base1.Length, base2.Length);
             
             return maxLength > 0 && (double)distance / maxLength < 0.3;
         }
         
-        private int LevenshteinDistance(string s, string t)
+        private static int LevenshteinDistance(string s, string t)
         {
             if (string.IsNullOrEmpty(s))
                 return string.IsNullOrEmpty(t) ? 0 : t.Length;
@@ -427,7 +356,7 @@ namespace Windows_Optimization
             {
                 for (var j = 1; j <= m; j++)
                 {
-                    var cost = (t[j - 1] == s[i - 1]) ? 0 : 1;
+                    var cost = t[j - 1] == s[i - 1] ? 0 : 1;
                     d[i, j] = Math.Min(
                         Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1),
                         d[i - 1, j - 1] + cost);
@@ -440,44 +369,33 @@ namespace Windows_Optimization
         private void DeleteItem(string item)
         {
             if (string.IsNullOrEmpty(_currentCategory) || 
-                !_filePaths.TryGetValue(_currentCategory, out string? filePath))
+                !_filePaths.TryGetValue(_currentCategory, out var filePath))
             {
                 ShowNotification("Категория не выбрана", true);
                 return;
             }
             
-            // Проверяем, является ли элемент избранным
             var fullItemName = $"{_currentCategory}:{item}";
-            bool isFavorite = _favorites.Contains(fullItemName);
             
-            if (isFavorite)
+            if (_favorites.Contains(fullItemName))
             {
-                var result = MessageBox.Show(
+                if (MessageBox.Show(
                     $"Элемент \"{item}\" находится в избранном.\nУдалить его из избранного и продолжить удаление?", 
                     "Элемент в избранном", 
                     MessageBoxButton.YesNo, 
-                    MessageBoxImage.Question);
-                
-                if (result != MessageBoxResult.Yes)
+                    MessageBoxImage.Question) != MessageBoxResult.Yes)
                     return;
                 
-                // Удаляем из избранного
                 _favorites.Remove(fullItemName);
                 SaveFavorites();
             }
             
-            // Проверяем настройку подтверждения удаления
-            if (_confirmDelete)
-            {
-                var result = MessageBox.Show(
-                    $"Вы уверены, что хотите удалить \"{item}\"?", 
-                    "Подтверждение удаления", 
-                    MessageBoxButton.YesNo, 
-                    MessageBoxImage.Question);
-                
-                if (result != MessageBoxResult.Yes)
-                    return;
-            }
+            if (_confirmDelete && MessageBox.Show(
+                $"Вы уверены, что хотите удалить \"{item}\"?", 
+                "Подтверждение удаления", 
+                MessageBoxButton.YesNo, 
+                MessageBoxImage.Question) != MessageBoxResult.Yes)
+                return;
             
             try
             {
@@ -486,20 +404,15 @@ namespace Windows_Optimization
                     .Select(line => line.Trim())
                     .ToList();
                 
-                // Ищем элемент для удаления (с временной меткой или без)
                 var itemToRemove = items.FirstOrDefault(i => 
                     i.EndsWith($"|{item}") || i == item);
                 
-                if (itemToRemove != null)
-                {
-                    items.Remove(itemToRemove);
-                    
-                    File.WriteAllLines(filePath, items);
-                    
-                    LoadItemsForCategory(_currentCategory, true, true);
-                    
-                    ShowNotification($"Удалено: {item}");
-                }
+                if (itemToRemove == null) return;
+                
+                items.Remove(itemToRemove);
+                File.WriteAllLines(filePath, items);
+                LoadItemsForCategory(_currentCategory, true, true);
+                ShowNotification($"Удалено: {item}");
             }
             catch (Exception ex)
             {
@@ -511,11 +424,8 @@ namespace Windows_Optimization
         {
             var fullItemName = $"{_currentCategory}:{item}";
             
-            if (_favorites.Contains(fullItemName))
-            {
-                _favorites.Remove(fullItemName);
+            if (_favorites.Remove(fullItemName))
                 ShowNotification($"Удалено из избранного: {item}");
-            }
             else
             {
                 _favorites.Add(fullItemName);
@@ -526,15 +436,11 @@ namespace Windows_Optimization
             LoadItemsForCategory(_currentCategory, true, _isDeleteMode, _isAddMode);
         }
         
-        #endregion
-        
-        #region Сохранение и загрузка настроек
-        
         private void SaveSettings()
         {
             try
             {
-                var settings = new
+                var settings = new Settings
                 {
                     BorderColor = $"#{_borderColor.R:X2}{_borderColor.G:X2}{_borderColor.B:X2}",
                     DividerColor = $"#{_dividerColor.R:X2}{_dividerColor.G:X2}{_dividerColor.B:X2}",
@@ -543,16 +449,13 @@ namespace Windows_Optimization
                     AutoRemoveOld = _autoRemoveOld,
                     BackgroundBrightness = _backgroundBrightness,
                     TextBrightness = _textBrightness,
-                    WindowWidth = this.Width,
-                    WindowHeight = this.Height
+                    WindowWidth = Width,
+                    WindowHeight = Height
                 };
                 
-                var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions
-                {
-                    WriteIndented = true
-                });
+                var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
                 
-                File.WriteAllText(Path.Combine(_appFolderPath, SETTINGS_FILE), json);
+                File.WriteAllText(Path.Combine(_appFolderPath, SettingsFile), json);
             }
             catch (Exception ex)
             {
@@ -562,14 +465,11 @@ namespace Windows_Optimization
         
         private void LoadSettings()
         {
-            var settingsPath = Path.Combine(_appFolderPath, SETTINGS_FILE);
+            var settingsPath = Path.Combine(_appFolderPath, SettingsFile);
             
             if (!File.Exists(settingsPath))
             {
-                // Устанавливаем значения по умолчанию
-                _borderColor = (Color)ColorConverter.ConvertFromString(DEFAULT_COLOR_HEX);
-                _dividerColor = (Color)ColorConverter.ConvertFromString(DEFAULT_COLOR_HEX);
-                _buttonHoverColor = (Color)ColorConverter.ConvertFromString(DEFAULT_COLOR_HEX);
+                SetDefaultColors();
                 return;
             }
             
@@ -578,36 +478,40 @@ namespace Windows_Optimization
                 var json = File.ReadAllText(settingsPath);
                 var settings = JsonSerializer.Deserialize<Settings>(json);
                 
-                if (settings != null)
+                if (settings == null)
                 {
-                    _borderColor = ParseColor(settings.BorderColor ?? DEFAULT_COLOR_HEX);
-                    _dividerColor = ParseColor(settings.DividerColor ?? DEFAULT_COLOR_HEX);
-                    _buttonHoverColor = ParseColor(settings.ButtonHoverColor ?? DEFAULT_COLOR_HEX);
-                    
-                    _confirmDelete = settings.ConfirmDelete ?? true;
-                    _autoRemoveOld = settings.AutoRemoveOld ?? false;
-                    _backgroundBrightness = settings.BackgroundBrightness ?? 0.5;
-                    _textBrightness = settings.TextBrightness ?? 0.8;
-                    
-                    // Применяем размер окна
-                    if (settings.WindowWidth.HasValue && settings.WindowWidth.Value > 0)
-                        this.Width = settings.WindowWidth.Value;
-                    if (settings.WindowHeight.HasValue && settings.WindowHeight.Value > 0)
-                        this.Height = settings.WindowHeight.Value;
+                    SetDefaultColors();
+                    return;
                 }
+                
+                _borderColor = ParseColor(settings.BorderColor ?? DefaultColorHex);
+                _dividerColor = ParseColor(settings.DividerColor ?? DefaultColorHex);
+                _buttonHoverColor = ParseColor(settings.ButtonHoverColor ?? DefaultColorHex);
+                
+                _confirmDelete = settings.ConfirmDelete ?? true;
+                _autoRemoveOld = settings.AutoRemoveOld ?? false;
+                _backgroundBrightness = settings.BackgroundBrightness ?? 0.5;
+                _textBrightness = settings.TextBrightness ?? 0.8;
+                
+                if (settings.WindowWidth > 0)
+                    Width = settings.WindowWidth.Value;
+                if (settings.WindowHeight > 0)
+                    Height = settings.WindowHeight.Value;
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Ошибка загрузки настроек: {ex.Message}");
-                
-                // Устанавливаем значения по умолчанию при ошибке
-                _borderColor = (Color)ColorConverter.ConvertFromString(DEFAULT_COLOR_HEX);
-                _dividerColor = (Color)ColorConverter.ConvertFromString(DEFAULT_COLOR_HEX);
-                _buttonHoverColor = (Color)ColorConverter.ConvertFromString(DEFAULT_COLOR_HEX);
+                SetDefaultColors();
             }
         }
         
-        private Color ParseColor(string colorString)
+        private void SetDefaultColors()
+        {
+            var color = (Color)ColorConverter.ConvertFromString(DefaultColorHex);
+            _borderColor = _dividerColor = _buttonHoverColor = color;
+        }
+        
+        private static Color ParseColor(string colorString)
         {
             try
             {
@@ -615,26 +519,22 @@ namespace Windows_Optimization
             }
             catch
             {
-                return (Color)ColorConverter.ConvertFromString(DEFAULT_COLOR_HEX);
+                return (Color)ColorConverter.ConvertFromString(DefaultColorHex);
             }
         }
         
         private class Settings
         {
-            public string? BorderColor { get; set; }
-            public string? DividerColor { get; set; }
-            public string? ButtonHoverColor { get; set; }
-            public bool? ConfirmDelete { get; set; }
-            public bool? AutoRemoveOld { get; set; }
-            public double? BackgroundBrightness { get; set; }
-            public double? TextBrightness { get; set; }
-            public double? WindowWidth { get; set; }
-            public double? WindowHeight { get; set; }
+            public string? BorderColor { get; init; }
+            public string? DividerColor { get; init; }
+            public string? ButtonHoverColor { get; init; }
+            public bool? ConfirmDelete { get; init; }
+            public bool? AutoRemoveOld { get; init; }
+            public double? BackgroundBrightness { get; init; }
+            public double? TextBrightness { get; init; }
+            public double? WindowWidth { get; init; }
+            public double? WindowHeight { get; init; }
         }
-        
-        #endregion
-        
-        #region Отображение элементов
         
         private void DisplayItems()
         {
@@ -642,114 +542,126 @@ namespace Windows_Optimization
             
             if (_currentItems.Count == 0)
             {
-                var textBlock = new TextBlock
-                {
-                    Text = _isDeleteMode ? "Нет элементов для удаления" : "Список пуст",
-                    Foreground = Brushes.Gray,
-                    FontSize = 14,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    Margin = new Thickness(0, 20, 0, 0)
-                };
-                ItemsListPanel.Children.Add(textBlock);
+                AddEmptyListText(_isDeleteMode ? "Нет элементов для удаления" : "Список пуст");
                 return;
             }
             
             foreach (var item in _currentItems)
+                ItemsListPanel.Children.Add(CreateItemGrid(item));
+        }
+        
+        private Grid CreateItemGrid(string item)
+        {
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            
+            var textButton = CreateTextButton(item);
+            var favoriteButton = CreateFavoriteButton(item);
+            
+            Grid.SetColumn(textButton, 0);
+            Grid.SetColumn(favoriteButton, 1);
+            
+            grid.Children.Add(textButton);
+            grid.Children.Add(favoriteButton);
+            
+            return grid;
+        }
+        
+        private Button CreateTextButton(string item)
+        {
+            var button = new Button
             {
-                var grid = new Grid();
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                
-                // Основная кнопка с текстом
-                var textButton = new Button
+                Content = item,
+                Style = (Style)FindResource("ListItemButtonStyle"),
+                Tag = item,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(0, 0, 5, 0)
+            };
+            
+            if (_isDeleteMode)
+            {
+                button.Content = new StackPanel
                 {
-                    Content = item,
-                    Style = (Style)FindResource("ListItemButtonStyle"),
-                    Tag = item,
-                    HorizontalAlignment = HorizontalAlignment.Stretch,
-                    HorizontalContentAlignment = HorizontalAlignment.Left,
-                    Margin = new Thickness(0, 0, 5, 0)
+                    Orientation = Orientation.Horizontal,
+                    Children =
+                    {
+                        new TextBlock 
+                        { 
+                            Text = "❌", 
+                            VerticalAlignment = VerticalAlignment.Center,
+                            Margin = new Thickness(0, 0, 10, 0)
+                        },
+                        new TextBlock 
+                        { 
+                            Text = item, 
+                            VerticalAlignment = VerticalAlignment.Center 
+                        }
+                    }
                 };
-                
-                // Кнопка избранного
-                var favoriteButton = new Button
-                {
-                    Width = 35,
-                    Height = 35,
-                    Background = Brushes.Transparent,
-                    BorderThickness = new Thickness(0),
-                    HorizontalAlignment = HorizontalAlignment.Right,
-                    Tag = item
-                };
-                
-                var fullItemName = $"{_currentCategory}:{item}";
-                var isFavorite = _favorites.Contains(fullItemName);
-                
-                var starText = new TextBlock
+                button.Click += (_, _) => DeleteItem(item);
+            }
+            else
+            {
+                button.Click += (_, _) => CopyToClipboard(item);
+            }
+            
+            return button;
+        }
+        
+        private Button CreateFavoriteButton(string item)
+        {
+            var fullItemName = $"{_currentCategory}:{item}";
+            var isFavorite = _favorites.Contains(fullItemName);
+            
+            var button = new Button
+            {
+                Width = 35,
+                Height = 35,
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Tag = item,
+                Visibility = _isDeleteMode ? Visibility.Collapsed : Visibility.Visible,
+                Content = new TextBlock
                 {
                     Text = isFavorite ? "⭐" : "☆",
                     FontSize = 14,
                     VerticalAlignment = VerticalAlignment.Center,
                     HorizontalAlignment = HorizontalAlignment.Center,
                     Foreground = isFavorite ? Brushes.Gold : Brushes.LightGray
-                };
-                
-                favoriteButton.Content = starText;
-                
-                if (_isDeleteMode)
-                {
-                    textButton.Content = new StackPanel
-                    {
-                        Orientation = Orientation.Horizontal,
-                        Children =
-                        {
-                            new TextBlock 
-                            { 
-                                Text = "❌", 
-                                VerticalAlignment = VerticalAlignment.Center,
-                                Margin = new Thickness(0, 0, 10, 0)
-                            },
-                            new TextBlock 
-                            { 
-                                Text = item, 
-                                VerticalAlignment = VerticalAlignment.Center 
-                            }
-                        }
-                    };
-                    
-                    textButton.Click += (s, e) => DeleteItem(item);
-                    
-                    // В режиме удаления скрываем кнопку избранного
-                    favoriteButton.Visibility = Visibility.Collapsed;
                 }
-                else
-                {
-                    textButton.Click += (s, e) =>
-                    {
-                        try
-                        {
-                            Clipboard.SetText(item);
-                            ShowNotification("Скопировано в буфер обмена");
-                        }
-                        catch (Exception ex)
-                        {
-                            ShowNotification($"Ошибка копирования: {ex.Message}", true);
-                        }
-                    };
-                    
-                    favoriteButton.Click += (s, e) =>
-                    {
-                        ToggleFavorite(item);
-                    };
-                }
-                
-                Grid.SetColumn(textButton, 0);
-                Grid.SetColumn(favoriteButton, 1);
-                
-                grid.Children.Add(textButton);
-                grid.Children.Add(favoriteButton);
-                
-                ItemsListPanel.Children.Add(grid);
+            };
+            
+            if (!_isDeleteMode)
+                button.Click += (_, _) => ToggleFavorite(item);
+            
+            return button;
+        }
+        
+        private void AddEmptyListText(string text)
+        {
+            ItemsListPanel.Children.Add(new TextBlock
+            {
+                Text = text,
+                Foreground = Brushes.Gray,
+                FontSize = 14,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 20, 0, 0)
+            });
+        }
+        
+        private void CopyToClipboard(string text)
+        {
+            try
+            {
+                Clipboard.SetText(text);
+                ShowNotification("Скопировано в буфер обмена");
+            }
+            catch (Exception ex)
+            {
+                ShowNotification($"Ошибка копирования: {ex.Message}", true);
             }
         }
         
@@ -761,106 +673,47 @@ namespace Windows_Optimization
             SettingsPanel.Visibility = Visibility.Collapsed;
         }
         
-        #endregion
-        
-        #region Управление интерфейсом
-        
-        private void BtnCategory1_Click(object sender, RoutedEventArgs e)
-        {
-            HandleCategoryClick("Аниме", SubMenu1);
-        }
-        
-        private void BtnCategory2_Click(object sender, RoutedEventArgs e)
-        {
-            HandleCategoryClick("Манга", SubMenu2);
-        }
-        
-        private void BtnCategory3_Click(object sender, RoutedEventArgs e)
-        {
-            HandleCategoryClick("Новелла", SubMenu3);
-        }
+        private void BtnCategory1_Click(object sender, RoutedEventArgs e) => HandleCategoryClick("Аниме", SubMenu1);
+        private void BtnCategory2_Click(object sender, RoutedEventArgs e) => HandleCategoryClick("Манга", SubMenu2);
+        private void BtnCategory3_Click(object sender, RoutedEventArgs e) => HandleCategoryClick("Новелла", SubMenu3);
         
         private void HandleCategoryClick(string category, StackPanel subMenu)
         {
             var now = DateTime.Now;
             
-            // Если это двойной клик на ту же кнопку
             if (_lastCategoryClicked == category && _lastCategoryClickTime.HasValue &&
                 (now - _lastCategoryClickTime.Value).TotalMilliseconds < 500)
             {
-                // Закрываем все подменю
-                SubMenu1.Visibility = Visibility.Collapsed;
-                SubMenu2.Visibility = Visibility.Collapsed;
-                SubMenu3.Visibility = Visibility.Collapsed;
-                
-                // Сбрасываем таймер
+                SubMenu1.Visibility = SubMenu2.Visibility = SubMenu3.Visibility = Visibility.Collapsed;
                 _lastCategoryClickTime = null;
                 _lastCategoryClicked = null;
                 return;
             }
             
-            // Запоминаем время клика
             _lastCategoryClickTime = now;
             _lastCategoryClicked = category;
             
-            // Открываем/закрываем подменю
+            subMenu.Visibility = subMenu.Visibility == Visibility.Visible 
+                ? Visibility.Collapsed 
+                : Visibility.Visible;
+            
             if (subMenu.Visibility == Visibility.Visible)
-            {
-                subMenu.Visibility = Visibility.Collapsed;
-            }
-            else
-            {
-                SubMenu1.Visibility = Visibility.Collapsed;
-                SubMenu2.Visibility = Visibility.Collapsed;
-                SubMenu3.Visibility = Visibility.Collapsed;
-                subMenu.Visibility = Visibility.Visible;
-            }
+                SubMenu1.Visibility = SubMenu2.Visibility = SubMenu3.Visibility = Visibility.Collapsed;
+            
+            subMenu.Visibility = Visibility.Visible;
         }
         
-        private void AddCategory1Btn_Click(object sender, RoutedEventArgs e)
-        {
-            LoadItemsForCategory("Аниме", true, false, true);
-        }
+        private void AddCategory1Btn_Click(object sender, RoutedEventArgs e) => LoadItemsForCategory("Аниме", true, false, true);
+        private void AddCategory2Btn_Click(object sender, RoutedEventArgs e) => LoadItemsForCategory("Манга", true, false, true);
+        private void AddCategory3Btn_Click(object sender, RoutedEventArgs e) => LoadItemsForCategory("Новелла", true, false, true);
         
-        private void AddCategory2Btn_Click(object sender, RoutedEventArgs e)
-        {
-            LoadItemsForCategory("Манга", true, false, true);
-        }
+        private void DeleteCategory1Btn_Click(object sender, RoutedEventArgs e) => LoadItemsForCategory("Аниме", true, true);
+        private void DeleteCategory2Btn_Click(object sender, RoutedEventArgs e) => LoadItemsForCategory("Манга", true, true);
+        private void DeleteCategory3Btn_Click(object sender, RoutedEventArgs e) => LoadItemsForCategory("Новелла", true, true);
         
-        private void AddCategory3Btn_Click(object sender, RoutedEventArgs e)
-        {
-            LoadItemsForCategory("Новелла", true, false, true);
-        }
-        
-        private void DeleteCategory1Btn_Click(object sender, RoutedEventArgs e)
-        {
-            LoadItemsForCategory("Аниме", true, true);
-        }
-        
-        private void DeleteCategory2Btn_Click(object sender, RoutedEventArgs e)
-        {
-            LoadItemsForCategory("Манга", true, true);
-        }
-        
-        private void DeleteCategory3Btn_Click(object sender, RoutedEventArgs e)
-        {
-            LoadItemsForCategory("Новелла", true, true);
-        }
-        
-        private void ViewCategory1Btn_Click(object sender, RoutedEventArgs e)
-        {
-            LoadItemsForCategory("Аниме", true);
-        }
-        
-        private void ViewCategory2Btn_Click(object sender, RoutedEventArgs e)
-        {
-            LoadItemsForCategory("Манга", true);
-        }
-        
-        private void ViewCategory3Btn_Click(object sender, RoutedEventArgs e)
-        {
-            LoadItemsForCategory("Новелла", true);
-        }
+        private void ViewCategory1Btn_Click(object sender, RoutedEventArgs e) => LoadItemsForCategory("Аниме", true);
+        private void ViewCategory2Btn_Click(object sender, RoutedEventArgs e) => LoadItemsForCategory("Манга", true);
+        private void ViewCategory3Btn_Click(object sender, RoutedEventArgs e) => LoadItemsForCategory("Новелла", true);
         
         private void ShowAddPanel()
         {
@@ -876,30 +729,12 @@ namespace Windows_Optimization
             AddItemTextBox.Focus();
         }
         
-        private void HideAddPanel()
-        {
-            AddPanel.Visibility = Visibility.Collapsed;
-        }
+        private void HideAddPanel() => AddPanel.Visibility = Visibility.Collapsed;
         
-        private void AddMainButton_Click(object sender, RoutedEventArgs e)
-        {
-            ShowAddPanel();
-        }
-        
-        private void CloseAddPanelButton_Click(object sender, RoutedEventArgs e)
-        {
-            HideAddPanel();
-        }
-        
-        private void CancelAddButton_Click(object sender, RoutedEventArgs e)
-        {
-            HideAddPanel();
-        }
-        
-        private void ConfirmAddButton_Click(object sender, RoutedEventArgs e)
-        {
-            AddItemToCurrentCategory(AddItemTextBox.Text.Trim());
-        }
+        private void AddMainButton_Click(object sender, RoutedEventArgs e) => ShowAddPanel();
+        private void CloseAddPanelButton_Click(object sender, RoutedEventArgs e) => HideAddPanel();
+        private void CancelAddButton_Click(object sender, RoutedEventArgs e) => HideAddPanel();
+        private void ConfirmAddButton_Click(object sender, RoutedEventArgs e) => AddItemToCurrentCategory(AddItemTextBox.Text.Trim());
         
         private void ShowSettings()
         {
@@ -907,47 +742,31 @@ namespace Windows_Optimization
             ContentText.Visibility = Visibility.Collapsed;
             ItemsListScrollViewer.Visibility = Visibility.Collapsed;
             SearchPanel.Visibility = Visibility.Collapsed;
-            SortAZButton.Visibility = Visibility.Collapsed;
-            SortZAButton.Visibility = Visibility.Collapsed;
-            SortDateButton.Visibility = Visibility.Collapsed;
+            SortAzButton.Visibility = SortZaButton.Visibility = SortDateButton.Visibility = Visibility.Collapsed;
             ContentTitle.Text = "Настройки";
             
             HideAllSettingsPanels();
         }
         
-        private void HideSettings()
-        {
-            SettingsPanel.Visibility = Visibility.Collapsed;
-        }
-        
-        private void CloseSettingsButton_Click(object sender, RoutedEventArgs e)
-        {
-            HideSettings();
-        }
-        
-        #endregion
-        
-        #region Настройки внешнего вида
+        private void HideSettings() => SettingsPanel.Visibility = Visibility.Collapsed;
+        private void CloseSettingsButton_Click(object sender, RoutedEventArgs e) => HideSettings();
         
         private void UpdateSettingsValues()
         {
-            // Устанавливаем начальные значения для полей обводки
             BorderHexTextBox.Text = $"#{_borderColor.R:X2}{_borderColor.G:X2}{_borderColor.B:X2}";
             DividerHexTextBox.Text = $"#{_dividerColor.R:X2}{_dividerColor.G:X2}{_dividerColor.B:X2}";
             ButtonHoverHexTextBox.Text = $"#{_buttonHoverColor.R:X2}{_buttonHoverColor.G:X2}{_buttonHoverColor.B:X2}";
             
-            // Устанавливаем начальные значения для слайдеров
-            WindowWidthSlider.Value = this.Width;
-            WindowHeightSlider.Value = this.Height;
-            WindowWidthValue.Text = $"{this.Width}px";
-            WindowHeightValue.Text = $"{this.Height}px";
+            WindowWidthSlider.Value = Width;
+            WindowHeightSlider.Value = Height;
+            WindowWidthValue.Text = $"{Width}px";
+            WindowHeightValue.Text = $"{Height}px";
             
             BackgroundBrightnessSlider.Value = _backgroundBrightness * 100;
             TextBrightnessSlider.Value = _textBrightness * 100;
             BackgroundBrightnessValue.Text = $"{_backgroundBrightness * 100:0}%";
             TextBrightnessValue.Text = $"{_textBrightness * 100:0}%";
             
-            // Настройки подтверждения удаления
             ConfirmDeleteCheckBox.IsChecked = _confirmDelete;
             AutoRemoveOldCheckBox.IsChecked = _autoRemoveOld;
         }
@@ -956,41 +775,28 @@ namespace Windows_Optimization
         {
             try
             {
-                // Применяем размер окна
-                this.Width = WindowWidthSlider.Value;
-                this.Height = WindowHeightSlider.Value;
+                Width = WindowWidthSlider.Value;
+                Height = WindowHeightSlider.Value;
                 
-                // Применяем яркость
                 _backgroundBrightness = BackgroundBrightnessSlider.Value / 100.0;
                 _textBrightness = TextBrightnessSlider.Value / 100.0;
                 
-                // Применяем цвета
                 ApplyBorderSettings();
                 ApplyDividerSettings();
                 ApplyButtonHoverSettings();
                 
-                // Обновляем настройки
                 if (ConfirmDeleteCheckBox.IsChecked.HasValue)
-                {
                     _confirmDelete = ConfirmDeleteCheckBox.IsChecked.Value;
-                }
                 
                 if (AutoRemoveOldCheckBox.IsChecked.HasValue)
-                {
                     _autoRemoveOld = AutoRemoveOldCheckBox.IsChecked.Value;
-                }
                 
-                // Сохраняем настройки
                 SaveSettings();
-                
-                // Применяем яркость интерфейса
                 ApplyBrightness();
                 
-                // Не показываем уведомление при запуске
                 if (!_firstLoad)
-                {
                     ShowNotification("Настройки применены");
-                }
+                    
                 _firstLoad = false;
             }
             catch (Exception ex)
@@ -999,29 +805,18 @@ namespace Windows_Optimization
             }
         }
         
-        private bool _firstLoad = true;
-        
-        private void ApplyBorderSettings()
-        {
-            MainBorder.BorderBrush = new SolidColorBrush(_borderColor);
-        }
-        
-        private void ApplyDividerSettings()
-        {
-            DividerBorder.Background = new SolidColorBrush(_dividerColor);
-        }
+        private void ApplyBorderSettings() => MainBorder.BorderBrush = new SolidColorBrush(_borderColor);
+        private void ApplyDividerSettings() => DividerBorder.Background = new SolidColorBrush(_dividerColor);
         
         private void ApplyButtonHoverSettings()
         {
             Application.Current.Resources["ButtonHoverColor"] = new SolidColorBrush(_buttonHoverColor);
             
-            byte hoverAlpha = 0x10; // 16 в hex - прозрачность
-            byte pressedAlpha = 0x20; // 32 в hex - прозрачность
+            const byte hoverAlpha = 0x10;
+            const byte pressedAlpha = 0x20;
             
-            Color hoverBackgroundColor = Color.FromArgb(hoverAlpha, 
-                _buttonHoverColor.R, _buttonHoverColor.G, _buttonHoverColor.B);
-            Color pressedColor = Color.FromArgb(pressedAlpha, 
-                _buttonHoverColor.R, _buttonHoverColor.G, _buttonHoverColor.B);
+            var hoverBackgroundColor = Color.FromArgb(hoverAlpha, _buttonHoverColor.R, _buttonHoverColor.G, _buttonHoverColor.B);
+            var pressedColor = Color.FromArgb(pressedAlpha, _buttonHoverColor.R, _buttonHoverColor.G, _buttonHoverColor.B);
             
             Application.Current.Resources["ButtonHoverBackground"] = new SolidColorBrush(hoverBackgroundColor);
             Application.Current.Resources["ButtonPressedColor"] = new SolidColorBrush(pressedColor);
@@ -1029,82 +824,38 @@ namespace Windows_Optimization
         
         private void ApplyBrightness()
         {
-            // Применяем яркость фона
             var baseColor = (Color)ColorConverter.ConvertFromString("#1E1E1E");
-            var brightnessFactor = _backgroundBrightness;
+            var r = (byte)(baseColor.R * _backgroundBrightness);
+            var g = (byte)(baseColor.G * _backgroundBrightness);
+            var b = (byte)(baseColor.B * _backgroundBrightness);
             
-            var r = (byte)(baseColor.R * brightnessFactor);
-            var g = (byte)(baseColor.G * brightnessFactor);
-            var b = (byte)(baseColor.B * brightnessFactor);
+            MainBorder.Background = new SolidColorBrush(Color.FromRgb(r, g, b));
             
-            var backgroundColor = Color.FromRgb(r, g, b);
-            
-            // Обновляем основные фоны
-            MainBorder.Background = new SolidColorBrush(backgroundColor);
-            
-            // Применяем яркость текста
-            var textBrightness = _textBrightness;
             var textColor = Color.FromRgb(
-                (byte)(255 * textBrightness),
-                (byte)(255 * textBrightness),
-                (byte)(255 * textBrightness));
+                (byte)(255 * _textBrightness),
+                (byte)(255 * _textBrightness),
+                (byte)(255 * _textBrightness));
             
-            // Обновляем цвет текста в основных элементах
             ContentText.Foreground = new SolidColorBrush(textColor);
-            ContentTitle.Foreground = new SolidColorBrush(Color.FromRgb(
-                (byte)(128 * textBrightness),
-                (byte)(128 * textBrightness),
-                (byte)(128 * textBrightness)));
+            
+            var titleColor = Color.FromRgb(
+                (byte)(128 * _textBrightness),
+                (byte)(128 * _textBrightness),
+                (byte)(128 * _textBrightness));
+            
+            ContentTitle.Foreground = new SolidColorBrush(titleColor);
         }
         
-        #endregion
+        private void WindowWidthSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e) => WindowWidthValue.Text = $"{e.NewValue:0}px";
+        private void WindowHeightSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e) => WindowHeightValue.Text = $"{e.NewValue:0}px";
+        private void BackgroundBrightnessSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e) => BackgroundBrightnessValue.Text = $"{e.NewValue:0}%";
+        private void TextBrightnessSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e) => TextBrightnessValue.Text = $"{e.NewValue:0}%";
         
-        #region Обработчики настроек
-        
-        private void WindowWidthSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-        {
-            WindowWidthValue.Text = $"{e.NewValue:0}px";
-        }
-        
-        private void WindowHeightSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-        {
-            WindowHeightValue.Text = $"{e.NewValue:0}px";
-        }
-        
-        private void BackgroundBrightnessSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-        {
-            BackgroundBrightnessValue.Text = $"{e.NewValue:0}%";
-        }
-        
-        private void TextBrightnessSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-        {
-            TextBrightnessValue.Text = $"{e.NewValue:0}%";
-        }
-        
-        private void WindowSizeButton_Click(object sender, RoutedEventArgs e)
-        {
-            ShowSettingsPanel(WindowSizePanel);
-        }
-        
-        private void BrightnessButton_Click(object sender, RoutedEventArgs e)
-        {
-            ShowSettingsPanel(BrightnessPanel);
-        }
-        
-        private void BorderSettingsButton_Click(object sender, RoutedEventArgs e)
-        {
-            ShowSettingsPanel(BorderSettingsPanel);
-        }
-        
-        private void DividerSettingsButton_Click(object sender, RoutedEventArgs e)
-        {
-            ShowSettingsPanel(DividerSettingsPanel);
-        }
-        
-        private void ButtonHoverSettingsButton_Click(object sender, RoutedEventArgs e)
-        {
-            ShowSettingsPanel(ButtonHoverSettingsPanel);
-        }
+        private void WindowSizeButton_Click(object sender, RoutedEventArgs e) => ShowSettingsPanel(WindowSizePanel);
+        private void BrightnessButton_Click(object sender, RoutedEventArgs e) => ShowSettingsPanel(BrightnessPanel);
+        private void BorderSettingsButton_Click(object sender, RoutedEventArgs e) => ShowSettingsPanel(BorderSettingsPanel);
+        private void DividerSettingsButton_Click(object sender, RoutedEventArgs e) => ShowSettingsPanel(DividerSettingsPanel);
+        private void ButtonHoverSettingsButton_Click(object sender, RoutedEventArgs e) => ShowSettingsPanel(ButtonHoverSettingsPanel);
         
         private void ShowSettingsPanel(Border panelToShow)
         {
@@ -1121,7 +872,7 @@ namespace Windows_Optimization
             ButtonHoverSettingsPanel.Visibility = Visibility.Collapsed;
         }
         
-        private bool ValidateColorInput(string hex, out Color color)
+        private static bool ValidateColorInput(string hex, out Color color)
         {
             try
             {
@@ -1135,8 +886,7 @@ namespace Windows_Optimization
                 if (!hex.StartsWith("#"))
                     hex = "#" + hex;
                     
-                if (!Regex.IsMatch(hex, 
-                    @"^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3}|[A-Fa-f0-9]{8})$"))
+                if (!Regex.IsMatch(hex, @"^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3}|[A-Fa-f0-9]{8})$"))
                 {
                     color = Colors.Transparent;
                     return false;
@@ -1154,7 +904,7 @@ namespace Windows_Optimization
         
         private void ApplyBorderColorButton_Click(object sender, RoutedEventArgs e)
         {
-            if (ValidateColorInput(BorderHexTextBox.Text, out Color newColor))
+            if (ValidateColorInput(BorderHexTextBox.Text, out var newColor))
             {
                 _borderColor = newColor;
                 ApplyBorderSettings();
@@ -1168,7 +918,7 @@ namespace Windows_Optimization
         
         private void ApplyDividerColorButton_Click(object sender, RoutedEventArgs e)
         {
-            if (ValidateColorInput(DividerHexTextBox.Text, out Color newColor))
+            if (ValidateColorInput(DividerHexTextBox.Text, out var newColor))
             {
                 _dividerColor = newColor;
                 ApplyDividerSettings();
@@ -1182,7 +932,7 @@ namespace Windows_Optimization
         
         private void ApplyButtonHoverColorButton_Click(object sender, RoutedEventArgs e)
         {
-            if (ValidateColorInput(ButtonHoverHexTextBox.Text, out Color newColor))
+            if (ValidateColorInput(ButtonHoverHexTextBox.Text, out var newColor))
             {
                 _buttonHoverColor = newColor;
                 ApplyButtonHoverSettings();
@@ -1194,14 +944,7 @@ namespace Windows_Optimization
             }
         }
         
-        private void ApplyAllSettingsButton_Click(object sender, RoutedEventArgs e)
-        {
-            ApplyAllSettings();
-        }
-        
-        #endregion
-        
-        #region Поиск
+        private void ApplyAllSettingsButton_Click(object sender, RoutedEventArgs e) => ApplyAllSettings();
         
         private void SearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
         {
@@ -1222,136 +965,27 @@ namespace Windows_Optimization
             if (_currentItems.Count == 0)
                 return;
             
-            var filteredItems = _currentItems
-                .Where(item => item.ToLower().Contains(searchText))
-                .ToList();
+            var filteredItems = _currentItems.Where(item => item.ToLower().Contains(searchText)).ToList();
             
             ItemsListPanel.Children.Clear();
             
             if (filteredItems.Count == 0)
             {
-                var textBlock = new TextBlock
-                {
-                    Text = "Ничего не найдено",
-                    Foreground = Brushes.Gray,
-                    FontSize = 14,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    Margin = new Thickness(0, 20, 0, 0)
-                };
-                ItemsListPanel.Children.Add(textBlock);
+                AddEmptyListText("Ничего не найдено");
                 return;
             }
             
             foreach (var item in filteredItems)
-            {
-                var grid = new Grid();
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                
-                // Основная кнопка с текстом
-                var textButton = new Button
-                {
-                    Content = item,
-                    Style = (Style)FindResource("ListItemButtonStyle"),
-                    Tag = item,
-                    HorizontalAlignment = HorizontalAlignment.Stretch,
-                    HorizontalContentAlignment = HorizontalAlignment.Left,
-                    Margin = new Thickness(0, 0, 5, 0)
-                };
-                
-                // Кнопка избранного
-                var favoriteButton = new Button
-                {
-                    Width = 35,
-                    Height = 35,
-                    Background = Brushes.Transparent,
-                    BorderThickness = new Thickness(0),
-                    HorizontalAlignment = HorizontalAlignment.Right,
-                    Tag = item
-                };
-                
-                var fullItemName = $"{_currentCategory}:{item}";
-                var isFavorite = _favorites.Contains(fullItemName);
-                
-                var starText = new TextBlock
-                {
-                    Text = isFavorite ? "⭐" : "☆",
-                    FontSize = 14,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    Foreground = isFavorite ? Brushes.Gold : Brushes.LightGray
-                };
-                
-                favoriteButton.Content = starText;
-                
-                if (_isDeleteMode)
-                {
-                    textButton.Content = new StackPanel
-                    {
-                        Orientation = Orientation.Horizontal,
-                        Children =
-                        {
-                            new TextBlock 
-                            { 
-                                Text = "❌", 
-                                VerticalAlignment = VerticalAlignment.Center,
-                                Margin = new Thickness(0, 0, 10, 0)
-                            },
-                            new TextBlock 
-                            { 
-                                Text = item, 
-                                VerticalAlignment = VerticalAlignment.Center 
-                            }
-                        }
-                    };
-                    
-                    textButton.Click += (s, e) => DeleteItem(item);
-                    
-                    // В режиме удаления скрываем кнопку избранного
-                    favoriteButton.Visibility = Visibility.Collapsed;
-                }
-                else
-                {
-                    textButton.Click += (s, e) =>
-                    {
-                        try
-                        {
-                            Clipboard.SetText(item);
-                            ShowNotification("Скопировано в буфер обмена");
-                        }
-                        catch (Exception ex)
-                        {
-                            ShowNotification($"Ошибка копирования: {ex.Message}", true);
-                        }
-                    };
-                    
-                    favoriteButton.Click += (s, e) =>
-                    {
-                        ToggleFavorite(item);
-                    };
-                }
-                
-                Grid.SetColumn(textButton, 0);
-                Grid.SetColumn(favoriteButton, 1);
-                
-                grid.Children.Add(textButton);
-                grid.Children.Add(favoriteButton);
-                
-                ItemsListPanel.Children.Add(grid);
-            }
+                ItemsListPanel.Children.Add(CreateItemGrid(item));
         }
         
-        #endregion
-        
-        #region Сортировка
-        
-        private void SortAZButton_Click(object sender, RoutedEventArgs e)
+        private void SortAzButton_Click(object sender, RoutedEventArgs e)
         {
             _currentSort = "az";
             LoadItemsForCategory(_currentCategory, true, _isDeleteMode, _isAddMode);
         }
         
-        private void SortZAButton_Click(object sender, RoutedEventArgs e)
+        private void SortZaButton_Click(object sender, RoutedEventArgs e)
         {
             _currentSort = "za";
             LoadItemsForCategory(_currentCategory, true, _isDeleteMode, _isAddMode);
@@ -1363,23 +997,16 @@ namespace Windows_Optimization
             LoadItemsForCategory(_currentCategory, true, _isDeleteMode, _isAddMode);
         }
         
-        #endregion
-        
-        #region Вспомогательные методы
-        
         private void ShowNotification(string message, bool isError = false)
         {
             NotificationText.Text = message;
             
-            var color = isError 
-                ? Color.FromRgb(255, 68, 68) 
-                : _borderColor;
-                
+            var color = isError ? Color.FromRgb(255, 68, 68) : _borderColor;
             NotificationPanel.Background = new SolidColorBrush(color);
             NotificationPanel.Visibility = Visibility.Visible;
             
             var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
-            timer.Tick += (s, e) =>
+            timer.Tick += (_, _) =>
             {
                 NotificationPanel.Visibility = Visibility.Collapsed;
                 timer.Stop();
@@ -1404,32 +1031,16 @@ namespace Windows_Optimization
                     AddItemToCurrentCategory(AddItemTextBox.Text.Trim());
                     break;
                 case Key.Escape:
-                    SubMenu1.Visibility = Visibility.Collapsed;
-                    SubMenu2.Visibility = Visibility.Collapsed;
-                    SubMenu3.Visibility = Visibility.Collapsed;
+                    SubMenu1.Visibility = SubMenu2.Visibility = SubMenu3.Visibility = Visibility.Collapsed;
                     break;
             }
         }
         
-        private void SettingsSidebarButton_Click(object sender, RoutedEventArgs e)
-        {
-            ShowSettings();
-        }
+        private void SettingsSidebarButton_Click(object sender, RoutedEventArgs e) => ShowSettings();
+        private void CloseButton_Click(object sender, RoutedEventArgs e) => Application.Current.Shutdown();
+        private void MinimizeButton_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
         
-        private void CloseButton_Click(object sender, RoutedEventArgs e)
-        {
-            Application.Current.Shutdown();
-        }
-        
-        private void MinimizeButton_Click(object sender, RoutedEventArgs e)
-        {
-            WindowState = WindowState.Minimized;
-        }
-        
-        private void MaximizeButton_Click(object sender, RoutedEventArgs e)
-        {
-            ToggleMaximize();
-        }
+        private void MaximizeButton_Click(object sender, RoutedEventArgs e) => ToggleMaximize();
         
         private void ToggleMaximize()
         {
@@ -1437,25 +1048,17 @@ namespace Windows_Optimization
             {
                 WindowState = WindowState.Normal;
                 if (MaximizeButton.Content is TextBlock textBlock)
-                {
                     textBlock.Text = "□";
-                }
                 MaximizeButton.ToolTip = "Развернуть";
             }
             else
             {
                 WindowState = WindowState.Maximized;
                 if (MaximizeButton.Content is TextBlock textBlock)
-                {
                     textBlock.Text = "❐";
-                }
                 MaximizeButton.ToolTip = "Свернуть";
             }
         }
-        
-        #endregion
-        
-        #region Новые функции
         
         private void ExportButton_Click(object sender, RoutedEventArgs e)
         {
@@ -1468,54 +1071,48 @@ namespace Windows_Optimization
                     Filter = "Text files (*.txt)|*.txt"
                 };
                 
-                if (saveDialog.ShowDialog() == true)
+                if (saveDialog.ShowDialog() != true) return;
+                
+                var exportText = new StringBuilder();
+                exportText.AppendLine("=== Anime Manga Novell Read Export ===");
+                exportText.AppendLine($"Export Date: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                exportText.AppendLine($"Favorites: {_favorites.Count}");
+                exportText.AppendLine();
+                
+                foreach (var kvp in _filePaths)
                 {
-                    var exportText = new StringBuilder();
-                    exportText.AppendLine("=== Anime Manga Novell Read Export ===");
-                    exportText.AppendLine($"Export Date: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-                    exportText.AppendLine($"Favorites: {_favorites.Count}");
-                    exportText.AppendLine();
+                    exportText.AppendLine($"--- {kvp.Key} ---");
                     
-                    foreach (var kvp in _filePaths)
+                    if (File.Exists(kvp.Value))
                     {
-                        exportText.AppendLine($"--- {kvp.Key} ---");
+                        var items = File.ReadAllLines(kvp.Value)
+                            .Where(line => !string.IsNullOrWhiteSpace(line))
+                            .Select(line => line.Trim())
+                            .Select(line => line.Split('|')[^1])
+                            .ToList();
                         
-                        if (File.Exists(kvp.Value))
+                        if (items.Count > 0)
                         {
-                            var items = File.ReadAllLines(kvp.Value)
-                                .Where(line => !string.IsNullOrWhiteSpace(line))
-                                .Select(line => line.Trim())
-                                .Select(line =>
-                                {
-                                    var parts = line.Split('|');
-                                    return parts.Length == 2 ? parts[1] : line;
-                                })
-                                .ToList();
-                            
-                            if (items.Count > 0)
+                            foreach (var item in items)
                             {
-                                foreach (var item in items)
-                                {
-                                    var isFavorite = _favorites.Contains($"{kvp.Key}:{item}");
-                                    exportText.AppendLine($"• {(isFavorite ? "⭐ " : "")}{item}");
-                                }
-                            }
-                            else
-                            {
-                                exportText.AppendLine("(пусто)");
+                                var isFavorite = _favorites.Contains($"{kvp.Key}:{item}");
+                                exportText.AppendLine($"• {(isFavorite ? "⭐ " : "")}{item}");
                             }
                         }
                         else
                         {
-                            exportText.AppendLine("(файл не найден)");
+                            exportText.AppendLine("(пусто)");
                         }
-                        exportText.AppendLine();
                     }
-                    
-                    File.WriteAllText(saveDialog.FileName, exportText.ToString());
-                    
-                    ShowNotification($"Данные экспортированы в {saveDialog.FileName}");
+                    else
+                    {
+                        exportText.AppendLine("(файл не найден)");
+                    }
+                    exportText.AppendLine();
                 }
+                
+                File.WriteAllText(saveDialog.FileName, exportText.ToString());
+                ShowNotification($"Данные экспортированы в {saveDialog.FileName}");
             }
             catch (Exception ex)
             {
@@ -1527,91 +1124,36 @@ namespace Windows_Optimization
         {
             try
             {
-                var openDialog = new OpenFileDialog
-                {
-                    Filter = "Text files (*.txt)|*.txt"
-                };
+                var openDialog = new OpenFileDialog { Filter = "Text files (*.txt)|*.txt" };
                 
-                if (openDialog.ShowDialog() == true)
+                if (openDialog.ShowDialog() != true) return;
+                
+                var content = File.ReadAllText(openDialog.FileName);
+                var lines = content.Split('\n');
+                string currentCategory = "";
+                var categoryItems = new List<string>();
+                
+                foreach (var line in lines)
                 {
-                    var content = File.ReadAllText(openDialog.FileName);
-                    var lines = content.Split('\n');
-                    string currentCategory = "";
-                    var categoryItems = new List<string>();
+                    var trimmedLine = line.Trim();
                     
-                    foreach (var line in lines)
+                    if (trimmedLine.StartsWith("--- ") && trimmedLine.EndsWith(" ---"))
                     {
-                        var trimmedLine = line.Trim();
-                        
-                        if (trimmedLine.StartsWith("--- ") && trimmedLine.EndsWith(" ---"))
-                        {
-                            if (!string.IsNullOrEmpty(currentCategory) && categoryItems.Count > 0)
-                            {
-                                if (_filePaths.TryGetValue(currentCategory, out string? filePath))
-                                {
-                                    var existingItems = File.ReadAllLines(filePath)
-                                        .Where(l => !string.IsNullOrWhiteSpace(l))
-                                        .Select(l => l.Trim())
-                                        .ToList();
-                                    
-                                    // Добавляем новые элементы с временными метками
-                                    foreach (var item in categoryItems)
-                                    {
-                                        var cleanItem = item.StartsWith("⭐ ") ? item.Substring(2) : item;
-                                        var itemWithTimestamp = $"{DateTime.Now.Ticks}|{cleanItem}";
-                                        
-                                        if (!existingItems.Any(existing => 
-                                            existing.EndsWith($"|{cleanItem}") || existing == cleanItem))
-                                        {
-                                            existingItems.Add(itemWithTimestamp);
-                                        }
-                                    }
-                                    
-                                    File.WriteAllLines(filePath, existingItems);
-                                }
-                            }
-                            
-                            currentCategory = trimmedLine.Substring(4, trimmedLine.Length - 8).Trim();
-                            categoryItems.Clear();
-                        }
-                        else if (trimmedLine.StartsWith("• "))
-                        {
-                            categoryItems.Add(trimmedLine.Substring(2).Trim());
-                        }
+                        SaveCategoryItems(currentCategory, categoryItems);
+                        currentCategory = trimmedLine.Substring(4, trimmedLine.Length - 8).Trim();
+                        categoryItems.Clear();
                     }
-                    
-                    if (!string.IsNullOrEmpty(currentCategory) && categoryItems.Count > 0)
+                    else if (trimmedLine.StartsWith("• "))
                     {
-                        if (_filePaths.TryGetValue(currentCategory, out string? filePath))
-                        {
-                            var existingItems = File.ReadAllLines(filePath)
-                                .Where(l => !string.IsNullOrWhiteSpace(l))
-                                .Select(l => l.Trim())
-                                .ToList();
-                            
-                            foreach (var item in categoryItems)
-                            {
-                                var cleanItem = item.StartsWith("⭐ ") ? item.Substring(2) : item;
-                                var itemWithTimestamp = $"{DateTime.Now.Ticks}|{cleanItem}";
-                                
-                                if (!existingItems.Any(existing => 
-                                    existing.EndsWith($"|{cleanItem}") || existing == cleanItem))
-                                {
-                                    existingItems.Add(itemWithTimestamp);
-                                }
-                            }
-                            
-                            File.WriteAllLines(filePath, existingItems);
-                        }
-                    }
-                    
-                    ShowNotification($"Данные импортированы из {openDialog.FileName}");
-                    
-                    if (!string.IsNullOrEmpty(_currentCategory))
-                    {
-                        LoadItemsForCategory(_currentCategory, true, _isDeleteMode, _isAddMode);
+                        categoryItems.Add(trimmedLine.Substring(2).Trim());
                     }
                 }
+                
+                SaveCategoryItems(currentCategory, categoryItems);
+                ShowNotification($"Данные импортированы из {openDialog.FileName}");
+                
+                if (!string.IsNullOrEmpty(_currentCategory))
+                    LoadItemsForCategory(_currentCategory, true, _isDeleteMode, _isAddMode);
             }
             catch (Exception ex)
             {
@@ -1619,12 +1161,33 @@ namespace Windows_Optimization
             }
         }
         
+        private void SaveCategoryItems(string category, List<string> items)
+        {
+            if (string.IsNullOrEmpty(category) || items.Count == 0) return;
+            
+            if (!_filePaths.TryGetValue(category, out var filePath)) return;
+            
+            var existingItems = File.ReadAllLines(filePath)
+                .Where(l => !string.IsNullOrWhiteSpace(l))
+                .Select(l => l.Trim())
+                .ToList();
+            
+            foreach (var item in items)
+            {
+                var cleanItem = item.StartsWith("⭐ ") ? item.Substring(2) : item;
+                if (!existingItems.Any(existing => existing.EndsWith($"|{cleanItem}") || existing == cleanItem))
+                    existingItems.Add($"{DateTime.Now.Ticks}|{cleanItem}");
+            }
+            
+            File.WriteAllLines(filePath, existingItems);
+        }
+        
         private void StatsButton_Click(object sender, RoutedEventArgs e)
         {
             try
             {
                 var stats = new StringBuilder();
-                int totalItems = 0;
+                var totalItems = 0;
                 
                 stats.AppendLine("📊 Статистика Anime Manga Novell Read");
                 stats.AppendLine("=====================================");
@@ -1632,21 +1195,17 @@ namespace Windows_Optimization
                 
                 foreach (var kvp in _filePaths)
                 {
+                    var items = 0;
                     if (File.Exists(kvp.Value))
                     {
-                        var items = File.ReadAllLines(kvp.Value)
+                        items = File.ReadAllLines(kvp.Value)
                             .Count(line => !string.IsNullOrWhiteSpace(line));
-                        
-                        var favoritesInCategory = _favorites
-                            .Count(f => f.StartsWith($"{kvp.Key}:"));
-                        
-                        stats.AppendLine($"• {kvp.Key}: {items} элементов ({favoritesInCategory} в избранном)");
-                        totalItems += items;
                     }
-                    else
-                    {
-                        stats.AppendLine($"• {kvp.Key}: файл не найден");
-                    }
+                    
+                    var favoritesInCategory = _favorites.Count(f => f.StartsWith($"{kvp.Key}:"));
+                    
+                    stats.AppendLine($"• {kvp.Key}: {items} элементов ({favoritesInCategory} в избранном)");
+                    totalItems += items;
                 }
                 
                 stats.AppendLine();
@@ -1655,8 +1214,7 @@ namespace Windows_Optimization
                 stats.AppendLine();
                 stats.AppendLine($"🗓️ Дата: {DateTime.Now:dd.MM.yyyy HH:mm}");
                 
-                MessageBox.Show(stats.ToString(), "Статистика", 
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(stats.ToString(), "Статистика Anime Manga Novell Read", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
@@ -1666,42 +1224,31 @@ namespace Windows_Optimization
         
         private void ClearAllDataButton_Click(object sender, RoutedEventArgs e)
         {
-            var result = MessageBox.Show(
+            if (MessageBox.Show(
                 "Вы уверены, что хотите очистить ВСЕ данные?\nЭто действие нельзя отменить!", 
-                "Очистка всех данных", 
+                "Очистка всех данных - Anime Manga Novell Read", 
                 MessageBoxButton.YesNo, 
-                MessageBoxImage.Warning);
+                MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
             
-            if (result == MessageBoxResult.Yes)
+            try
             {
-                try
+                foreach (var kvp in _filePaths)
                 {
-                    foreach (var kvp in _filePaths)
-                    {
-                        if (File.Exists(kvp.Value))
-                        {
-                            File.WriteAllText(kvp.Value, "");
-                        }
-                    }
-                    
-                    // Очищаем избранное
-                    _favorites.Clear();
-                    SaveFavorites();
-                    
-                    ShowNotification("Все данные очищены");
-                    
-                    if (!string.IsNullOrEmpty(_currentCategory))
-                    {
-                        LoadItemsForCategory(_currentCategory, true, _isDeleteMode, _isAddMode);
-                    }
+                    if (File.Exists(kvp.Value))
+                        File.WriteAllText(kvp.Value, "");
                 }
-                catch (Exception ex)
-                {
-                    ShowNotification($"Ошибка очистки данных: {ex.Message}", true);
-                }
+                
+                _favorites.Clear();
+                SaveFavorites();
+                ShowNotification("Все данные очищены");
+                
+                if (!string.IsNullOrEmpty(_currentCategory))
+                    LoadItemsForCategory(_currentCategory, true, _isDeleteMode, _isAddMode);
+            }
+            catch (Exception ex)
+            {
+                ShowNotification($"Ошибка очистки данных: {ex.Message}", true);
             }
         }
-        
-        #endregion
     }
 }
